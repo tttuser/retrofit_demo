@@ -79,12 +79,19 @@ The project includes comprehensive unit tests using MockWebServer:
 
 ### Test Coverage
 
-1. **Request Shape Validation**: Verifies path/query parameters are correctly formatted
-2. **Header Validation**: Confirms `X-Request-Id` header is added by interceptor
-3. **Response<T> Handling**: Tests both 2xx and non-2xx responses
-4. **Call<T> Execution**: Validates lazy execution of API calls
-5. **Form-Encoded Requests**: Verifies form data encoding
-6. **Custom CallAdapter**: Tests `ApiResult` wrapping for success/error/network failure cases
+The `ApiServiceTest.kt` includes 9 comprehensive tests:
+
+1. **Path and Query Parameters**: Validates that `@Path` and `@Query` annotations work correctly
+2. **Request ID Header**: Confirms `RequestIdInterceptor` adds `X-Request-Id` header with valid UUID
+3. **Non-2xx Error Handling**: Tests `Response<T>` wrapper for 404 and other error codes
+4. **2xx Success Handling**: Tests `Response<T>` wrapper for successful responses
+5. **Call Execution**: Validates `Call<T>` lazy execution pattern
+6. **Form Encoding**: Verifies `@FormUrlEncoded` produces correct `Content-Type` and body format
+7. **ApiResult Success Wrapping**: Tests custom CallAdapter wraps successful responses in `ApiResult.Success`
+8. **ApiResult Error Wrapping**: Tests custom CallAdapter wraps HTTP errors in `ApiResult.Error` with error body
+9. **ApiResult Network Failure**: Tests custom CallAdapter wraps network failures in `ApiResult.Error`
+
+Each test uses MockWebServer to simulate API responses without requiring a real server.
 
 ## Key Concepts
 
@@ -118,7 +125,18 @@ Throughout the codebase, you'll find detailed comments explaining:
 
 ## Building the Project
 
+### Prerequisites
+- Android SDK installed
+- `ANDROID_HOME` environment variable set  
+- Java 17 or newer
+- Internet connection for dependency downloads
+
+### Build Commands
+
 ```bash
+# Initialize Gradle wrapper (if needed)
+gradle wrapper --gradle-version 8.2
+
 # Build the project
 ./gradlew build
 
@@ -127,6 +145,19 @@ Throughout the codebase, you'll find detailed comments explaining:
 
 # Run specific test class
 ./gradlew test --tests ApiServiceTest
+
+# Clean build
+./gradlew clean
+
+# View test report
+# After running tests, open: app/build/reports/tests/testDebugUnitTest/index.html
+```
+
+### Quick Start Script
+
+Run the included test script to see expected test output:
+```bash
+./run_tests.sh
 ```
 
 ## Dependencies
