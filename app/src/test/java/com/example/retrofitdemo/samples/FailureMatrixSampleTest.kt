@@ -22,7 +22,7 @@ import com.squareup.moshi.JsonDataException
  * 
  * Learning nodes:
  * - L1-4: Different failure scenarios and their characteristics
- * - L4-7: Error classification and handling strategies
+ * - L4-7: Advanced error classification and handling strategies
  * 
  * This test demonstrates:
  * 1. HTTP 404 Not Found - Client error

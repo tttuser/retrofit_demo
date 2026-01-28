@@ -15,7 +15,7 @@ import retrofit2.http.Path
  * 
  * Learning nodes:
  * - L1-3: Different return type behaviors
- * - L3-7: Error handling differences between return types
+ * - L3-7: Advanced error handling patterns
  * 
  * This sample demonstrates:
  * 1. Call<T>: Lazy execution, cancellable, synchronous or asynchronous

@@ -159,6 +159,10 @@ The `samples/` package contains focused examples aligned with learning objective
 - `suspend T`: Direct result, throws on error
 - `suspend Response<T>`: Full response with metadata
 
+**Learning Notes**: 
+- L1-3 covers basic return type behaviors
+- L3-7 covers advanced error handling patterns
+
 **Test Coverage** (`ReturnTypesComparisonSampleTest.kt`):
 - ✓ Call<T> success and error inspection
 - ✓ suspend T direct result
@@ -174,6 +178,10 @@ The `samples/` package contains focused examples aligned with learning objective
 - Malformed JSON → JsonDataException
 - Missing fields → JsonDataException
 - Wrong data types → JsonDataException
+
+**Learning Notes**:
+- L1-4 covers basic failure scenarios
+- L4-7 covers advanced error classification strategies
 
 **Test Coverage**:
 - ✓ 404 error produces HttpException with code
