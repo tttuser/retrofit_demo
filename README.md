@@ -55,17 +55,31 @@ app/
 │   │   │   │   ├── Post.kt
 │   │   │   │   ├── LoginRequest.kt
 │   │   │   │   └── LoginResponse.kt
-│   │   │   └── network/
-│   │   │       ├── ApiResult.kt
-│   │   │       ├── ApiResultCallAdapterFactory.kt
-│   │   │       ├── ApiService.kt
-│   │   │       ├── LoggingInterceptor.kt
-│   │   │       ├── RequestIdInterceptor.kt
-│   │   │       └── RetrofitClient.kt
+│   │   │   ├── network/
+│   │   │   │   ├── ApiResult.kt
+│   │   │   │   ├── ApiResultCallAdapterFactory.kt
+│   │   │   │   ├── ApiService.kt
+│   │   │   │   ├── LoggingInterceptor.kt
+│   │   │   │   ├── RequestIdInterceptor.kt
+│   │   │   │   └── RetrofitClient.kt
+│   │   │   └── samples/
+│   │   │       ├── HelloRetrofitSample.kt
+│   │   │       ├── JsonBodyPostSample.kt
+│   │   │       ├── FormAndMultipartSample.kt
+│   │   │       └── ReturnTypesComparisonSample.kt
 │   │   └── AndroidManifest.xml
 │   └── test/
-│       └── java/com/example/retrofitdemo/network/
-│           └── ApiServiceTest.kt
+│       └── java/com/example/retrofitdemo/
+│           ├── network/
+│           │   └── ApiServiceTest.kt
+│           └── samples/
+│               ├── HelloRetrofitSampleTest.kt
+│               ├── JsonBodyPostSampleTest.kt
+│               ├── FormAndMultipartSampleTest.kt
+│               ├── ReturnTypesComparisonSampleTest.kt
+│               ├── FailureMatrixSampleTest.kt
+│               ├── CancelPropagationSampleTest.kt
+│               └── InterceptorOrderSampleTest.kt
 └── build.gradle.kts
 ```
 
@@ -92,6 +106,120 @@ The `ApiServiceTest.kt` includes 9 comprehensive tests:
 9. **ApiResult Network Failure**: Tests custom CallAdapter wraps network failures in `ApiResult.Error`
 
 Each test uses MockWebServer to simulate API responses without requiring a real server.
+
+### Learning-Aligned Sample Classes
+
+The `samples/` package contains focused examples aligned with learning objectives:
+
+#### 1. HelloRetrofitSample (L1-1, L1-7)
+**Demonstrates**: Basic Retrofit setup and GET requests
+- Minimal Retrofit instance creation
+- Service interface definition
+- GET with path parameters (`@Path`)
+- GET with query parameters (`@Query`)
+- Request ID header injection
+
+**Test Coverage** (`HelloRetrofitSampleTest.kt`):
+- ✓ GET request with path parameter
+- ✓ Query parameter inclusion
+- ✓ X-Request-Id header presence and UUID format
+- ✓ Response parsing
+
+#### 2. JsonBodyPostSample (L1-2)
+**Demonstrates**: POST requests with JSON body
+- Request/Response DTOs
+- `@Body` annotation for JSON serialization
+- Moshi automatic JSON conversion
+- Content-Type: application/json
+
+**Test Coverage** (`JsonBodyPostSampleTest.kt`):
+- ✓ POST method verification
+- ✓ Content-Type header validation
+- ✓ JSON body serialization
+- ✓ Response deserialization
+
+#### 3. FormAndMultipartSample (L1-2)
+**Demonstrates**: Form-encoded and multipart requests
+- `@FormUrlEncoded` with `@Field`
+- `@Multipart` with `@Part`
+- Different content types
+- File upload simulation
+
+**Test Coverage** (`FormAndMultipartSampleTest.kt`):
+- ✓ Form-encoded Content-Type
+- ✓ Form field encoding
+- ✓ Multiple field types (String, Int, Boolean)
+- ✓ Multipart Content-Type with boundary
+- ✓ Multipart parts structure
+- ✓ Boundary separation
+
+#### 4. ReturnTypesComparisonSample (L1-3, L3-7)
+**Demonstrates**: Different Retrofit return types
+- `Call<T>`: Lazy execution, cancellable
+- `suspend T`: Direct result, throws on error
+- `suspend Response<T>`: Full response with metadata
+
+**Learning Notes**: 
+- L1-3 covers basic return type behaviors
+- L3-7 covers advanced error handling patterns
+
+**Test Coverage** (`ReturnTypesComparisonSampleTest.kt`):
+- ✓ Call<T> success and error inspection
+- ✓ suspend T direct result
+- ✓ suspend T throws HttpException on non-2xx
+- ✓ suspend Response<T> error inspection
+- ✓ Side-by-side comparison of all three types
+
+#### 5. FailureMatrixSampleTest (L1-4, L4-7)
+**Demonstrates**: Error classification and handling
+- HTTP 404 (Client Error) → HttpException
+- HTTP 500 (Server Error) → HttpException
+- Network failure → IOException
+- Malformed JSON → JsonDataException
+- Missing fields → JsonDataException
+- Wrong data types → JsonDataException
+
+**Learning Notes**:
+- L1-4 covers basic failure scenarios
+- L4-7 covers advanced error classification strategies
+
+**Test Coverage**:
+- ✓ 404 error produces HttpException with code
+- ✓ 500 error produces HttpException
+- ✓ Network failure produces IOException
+- ✓ Malformed JSON produces JsonDataException
+- ✓ Missing required field error
+- ✓ Wrong data type error
+- ✓ Comprehensive error classification strategy
+
+#### 6. CancelPropagationSampleTest (L1-5)
+**Demonstrates**: Request cancellation behavior
+- `Call.cancel()` for synchronous calls
+- Coroutine cancellation for suspend functions
+- `withTimeout` for automatic cancellation
+- Parent-child cancellation propagation
+
+**Test Coverage**:
+- ✓ Call.cancel() cancels network request
+- ✓ Cancelled Call throws IOException
+- ✓ Coroutine cancellation cancels request
+- ✓ withTimeout cancels slow requests
+- ✓ Independent cancellation of multiple calls
+- ✓ Parent coroutine cancellation propagates to children
+
+#### 7. InterceptorOrderSampleTest (L2-1, L2-2)
+**Demonstrates**: Interceptor execution order
+- Application interceptors vs. Network interceptors
+- Execution order: Application → OkHttp internal → Network → Server
+- Invocation counting and tracking
+- Logging interceptor pattern
+
+**Test Coverage**:
+- ✓ Application interceptors execute before network interceptors
+- ✓ Multiple application interceptors execute in order
+- ✓ Interceptors invoked once per request
+- ✓ Complete chain execution order
+- ✓ Logging interceptor request/response tracking
 
 ## Key Concepts
 
@@ -145,6 +273,13 @@ gradle wrapper --gradle-version 8.2
 
 # Run specific test class
 ./gradlew test --tests ApiServiceTest
+
+# Run sample tests
+./gradlew test --tests "com.example.retrofitdemo.samples.*"
+
+# Run specific sample test
+./gradlew test --tests HelloRetrofitSampleTest
+./gradlew test --tests FailureMatrixSampleTest
 
 # Clean build
 ./gradlew clean
