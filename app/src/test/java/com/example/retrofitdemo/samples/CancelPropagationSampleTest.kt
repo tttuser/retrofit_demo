@@ -16,6 +16,42 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.GET
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import retrofit2.Callback
+import retrofit2.Response
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+// 占位异常；也可换 retrofit2.HttpException
+class HttpExceptionLike(val code: Int, message: String?) : IOException("HTTP $code ${message ?: ""}")
+
+suspend fun <T> Call<T>.awaitCancellable(): T =
+    suspendCancellableCoroutine { cont ->
+        cont.invokeOnCancellation {
+            this.cancel()
+        }
+
+        enqueue(object : Callback<T> {
+
+            override fun onResponse(call: Call<T?>, response: Response<T?>) {
+                if (!cont.isActive) return
+                val body = response.body()
+                if (response.isSuccessful && body != null) {
+                    cont.resume(body)
+                } else {
+                    cont.resumeWithException(
+                        HttpExceptionLike(response.code(), response.errorBody()?.string())
+                    )
+                }
+            }
+
+            override fun onFailure(call: Call<T?>, t: Throwable) {
+                if (!cont.isActive) return
+                cont.resumeWithException(t)
+            }
+
+        })
+
+    }
 
 /**
  * CancelPropagationSampleTest: Demonstrates request cancellation behavior.
@@ -211,7 +247,7 @@ class CancelPropagationSampleTest {
                 .setBody("""{"id":1,"value":"very slow"}""")
                 .setBodyDelay(5, TimeUnit.SECONDS)
         )
-        
+
         // Act & Assert: Use withTimeout to cancel
         try {
             withTimeout(500) { // 500ms timeout
