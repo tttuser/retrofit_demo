@@ -184,9 +184,9 @@ object TimeoutTuning {
      */
     fun getTimeouts(client: OkHttpClient): Map<String, Long> {
         return mapOf(
-            "connect" to client.connectTimeoutMillis / 1000,
-            "read" to client.readTimeoutMillis / 1000,
-            "write" to client.writeTimeoutMillis / 1000
+            "connect" to client.connectTimeoutMillis / 1000L,
+            "read" to client.readTimeoutMillis / 1000L,
+            "write" to client.writeTimeoutMillis / 1000L
         )
     }
 }
