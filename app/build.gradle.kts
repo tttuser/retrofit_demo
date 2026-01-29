@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.example.retrofitdemo"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.retrofitdemo"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -24,6 +24,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            isMinifyEnabled = false
         }
     }
     
@@ -52,8 +55,11 @@ dependencies {
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
 
     // AndroidX
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.test.ext:junit-ktx:1.3.0")
+    implementation("com.google.android.material:material:1.13.0")
+    implementation("androidx.activity:activity:1.7.2")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

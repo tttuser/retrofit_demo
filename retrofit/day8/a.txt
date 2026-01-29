@@ -1,0 +1,350 @@
+要在 Retrofit 2.11.0 里精确定位“注解解析发生点”并验证缓存带来的差异，可以按下面两步做：先用源码定位解析入口与缓存容器；再用可复现实验（计时/断点/日志/统计）证明“首次调用慢、后续调用快”来自缓存命中。
+
+你没给具体仓库链接，因此我不能贴仓库源码片段（按你的规则需要 permalink）。下面给的是定位方法与可执行的验证方案，你可以在本地 Retrofit 2.11.0 源码或依赖源码中照着走。
+
+1) 定位：注解解析发生在哪，缓存在哪里
+1.1 缓存容器：Retrofit 里对 Method -> ServiceMethod 的缓存
+在 Retrofit 2.x，方法解析结果会缓存到 Retrofit 实例内部的一个 map（常见命名是 serviceMethodCache），key 是 java.lang.reflect.Method。
+
+你在 IDE 里这样定位即可：
+
+全局搜索：serviceMethodCache
+或搜索：loadServiceMethod( / ServiceMethod.parseAnnotations
+你会看到类似的调用链（名字可能非常接近）：
+
+Retrofit.create(...) 的 InvocationHandler
+loadServiceMethod(method)
+cache.get(method) 命中直接返回
+未命中：ServiceMethod.parseAnnotations(this, method) 创建并 cache.put
+结论：缓存发生点 = loadServiceMethod(Method)；缓存粒度 = 每个接口方法一次。
+
+1.2 注解解析入口：ServiceMethod.parseAnnotations(retrofit, method)
+注解解析的“总入口”通常是：
+
+ServiceMethod.parseAnnotations(...)
+它内部会做两类解析：
+
+请求层解析：方法/参数注解 → RequestFactory
+你要找的“注解解析发生点”最典型就是：
+RequestFactory.parseAnnotations(retrofit, method)
+返回值层解析：返回类型 → CallAdapter，body 类型 → Converter
+常见是在 HttpServiceMethod.parseAnnotations(...) 中：
+retrofit.callAdapter(...)
+retrofit.responseBodyConverter(...)
+retrofit.requestBodyConverter(...)（如果有 @Body）
+你要精确定位注解解析：
+
+方法注解解析：在 RequestFactory.parseAnnotations 内部扫描 method.getAnnotations()（或 getDeclaredAnnotations()）
+参数注解解析：在 RequestFactory.parseAnnotations 内部扫描 method.getParameterAnnotations()，并为每个参数构造 ParameterHandler
+2) 验证：缓存带来的差异怎么量化/证明
+你需要证明两件事：
+
+A：注解解析确实只发生一次（同一个 Method）
+B：第一次调用与后续调用存在可测差异，且差异来源是缓存命中
+给你三种验证强度从低到高的方法。
+
+方法 1：打断点/计数（最直接）
+在以下位置打断点：
+
+Retrofit.loadServiceMethod(Method)（看 cache 分支）
+ServiceMethod.parseAnnotations(...)
+RequestFactory.parseAnnotations(...)
+跑一个最小 demo：
+
+构造 Retrofit
+val api = retrofit.create(Api::class.java)
+连续调用同一个接口方法两次（注意：是“调用方法”，不是只创建 service）
+观察：
+第一次调用：会进入 parseAnnotations / RequestFactory.parseAnnotations
+第二次调用：只进入 loadServiceMethod 并走 cache hit 分支，不再进入解析函数
+优点：不需要改源码，不依赖计时误差。
+缺点：属于定性证明（虽然很强）。
+
+方法 2：用 Java Flight Recorder / Async Profiler 看热点（无需改源码）
+目标：在 profile 中看到首次调用时 RequestFactory.parseAnnotations、ServiceMethod.parseAnnotations 占比高；后续调用消失。
+
+做法：
+
+写一个基准程序：
+
+先 warm up（避免 JIT 干扰）
+测量第 1 次调用与第 N 次调用
+开 JFR 或 async-profiler：
+
+JFR：看 Method Profiling / Hot Methods
+async-profiler：生成 flamegraph
+预期现象：
+
+第一次调用 flamegraph 会出现：
+ServiceMethod.parseAnnotations
+RequestFactory.parseAnnotations
+retrofit.callAdapter
+retrofit.responseBodyConverter
+后续调用这些栈会显著减少/消失，热点转移到：
+参数 handler apply
+OkHttp Call 创建/执行（如果真的执行请求）
+优点：定量、可视化、对外可展示。
+缺点：需要一点 profiling 经验。
+
+方法 3：控制变量计时（给出明确“缓存差值”数字）
+要避免网络噪声，你必须把“执行网络”剥离掉，只测“方法解析 + 创建 Call”这一段。
+
+可行策略：
+
+让接口方法返回 Call<Void> 或 Call<ResponseBody>
+调用时不要 enqueue/execute，只调用接口方法本身拿到 Call 对象（解析发生在这里，网络不会发生）
+这样测到的时间主要是：首次解析 vs 缓存命中后的对象创建
+计时方法（建议用 JMH 最稳；也可以手写 System.nanoTime）：
+
+Case A：第一次调用（cold）
+新建 Retrofit
+create service
+调用一次方法
+Case B：后续调用（warm）
+同一个 Retrofit、同一个 service
+循环调用方法 10万次（不执行网络）取平均
+你要记录的指标：
+
+首次调用耗时（一次）
+后续平均耗时（N 次平均）
+二者比值（通常会是数量级差距：首次明显更高）
+关键验证点：
+如果你每次都 new 一个 Retrofit，那么每次都 cold，差异会变小或消失；缓存存在于 Retrofit 实例内。
+
+3) 明确“验证结论”的判据（你该看到什么）
+当你完成以上任一验证方式，应该能得到下面这些“可核验的结论”：
+
+同一个 Retrofit 实例下，同一个接口 Method：
+
+第一次调用：发生 ServiceMethod.parseAnnotations / RequestFactory.parseAnnotations
+后续调用：不再发生解析（cache hit）
+计时/Profiler 角度：
+
+首次调用成本显著高于后续调用
+后续调用成本主要是参数应用（ParameterHandler.apply）+ OkHttpCall 创建（如果只是创建 Call）
+4) 我需要你提供一个信息，我就能把“发生点”说到文件/方法级并给出精确路径
+你现在的要求是“定位发生点”，如果你把以下任意一个发我，我就能把“解析发生在哪个文件的哪个方法”精确到源码层（并按你规则用带 name= 的 file block；如果是仓库我还能附 permalink）：
+
+你本地依赖的 Retrofit 源码路径（或你用的 Maven 坐标确认是 com.squareup.retrofit2:retrofit:2.11.0），或
+Retrofit 2.11.0 的 GitHub tag 链接（例如 .../tree/2.11.0），或
+你 IDE 中搜到的 loadServiceMethod / serviceMethodCache 那段代码截图/粘贴。
+你更希望我用哪一种方式来“验证缓存差异”：断点验证、Profiler、还是 JMH 基准？
+
+You said: 如果是Android，方法2怎么测试，指导一下
+如果是Android，方法2怎么测试，指导一下
+Copilot said: 在 Android 上做“方法 2：用 profiler 看首次解析 vs
+在 Android 上做“方法 2：用 profiler 看首次解析 vs 缓存命中差异”，推荐两条路线：Android Studio Profiler（简单）和 Perfetto/atrace（更底层）。目标是抓到 Retrofit 第一次调用时 ServiceMethod.parseAnnotations / RequestFactory.parseAnnotations 等栈很明显，后续调用这些栈消失或占比极小。
+
+下面按可操作步骤给你。
+
+A. Android Studio CPU Profiler（最省事）
+1) 准备一个“只触发方法解析、不发网络”的测试代码
+关键点：只调用接口方法拿到 Call，不要 execute/enqueue，这样你测到的时间主要是 Retrofit 的方法解析/构建 Call，而不会被网络淹没。
+
+例如（思路）：
+
+val api = retrofit.create(Api::class.java)
+api.someCall(arg1, arg2) 只到这里
+重复多次以制造采样信号
+建议把它放到一个按钮点击或 onResume 里，方便你手动开始录制后触发。
+
+你做两段：
+
+Cold：新建一个 Retrofit 实例 + create + 调用一次（触发解析）
+Warm：同一个 retrofit/service，循环调用同一个方法很多次（验证缓存命中）
+注意：缓存是挂在 Retrofit 实例 上的，所以 warm 必须复用同一个 Retrofit。
+
+2) 开启“可调试 + 非 minify”
+用 debug variant 跑
+临时确保 minifyEnabled false（否则方法名可能被混淆/内联，堆栈难读）
+如果你开启了 R8 full mode，建议先关掉以便看到完整方法名
+3) 在 Android Studio 打开 CPU Profiler 并录制
+View > Tool Windows > Profiler
+选中设备与 app 进程
+点击 CPU 轨道
+点击 Record（录制）
+选择录制配置：
+优先选 “Callstack Sample”（采样，开销低，适合循环场景）
+或选 “Trace Java Methods”（插桩，信息更细，但开销较大；有时会影响耗时对比）
+开始录制后，触发你的测试代码（按钮/进入页面）
+录制几秒后停止
+4) 在调用树/火焰图里找 Retrofit 解析热点
+在结果里切到：
+
+Flame Chart 或 Call Chart（调用树）
+搜索（Filter）这些关键字（不同版本/包名可能略有差异）：
+
+retrofit2.ServiceMethod
+parseAnnotations
+retrofit2.RequestFactory
+ParameterHandler
+retrofit2.Retrofit（loadServiceMethod）
+你应该看到：
+
+Cold：ServiceMethod.parseAnnotations / RequestFactory.parseAnnotations 占比明显
+Warm（大量重复调用）：这些 parse 方法几乎不再出现或占比极低；热点更多在你循环本身以及创建 OkHttpCall 的路径
+5) 如何“对照验证 Cold vs Warm”
+最清晰的做法是录两次 trace：
+
+Trace 1：只跑 cold 段（一次调用）
+Trace 2：只跑 warm 段（循环 5万~20万 次）
+对比两份 trace 的 hot methods：
+
+Trace 1 里 parseAnnotations 相关方法应该显著
+Trace 2 里 parseAnnotations 应该消失（因为 cache hit）
+B. Perfetto/atrace（需要你“打点”，但非常可靠）
+CPU 采样有时会“采不到你关心的那一下”——因为 cold 只有一次、很短。Perfetto 更适合做“事件级别对比”。做法是在应用代码里加 Trace section，把 cold 与 warm 用系统 trace 标出来，然后在 Perfetto 里看时间差和线程栈（部分设备/版本可见）。
+
+1) 在关键段落加 trace 标记
+用 androidx.tracing:tracing（推荐）或 android.os.Trace：
+
+Trace.beginSection("retrofit-cold-first-call")
+Trace.endSection()
+以及 warm loop：
+
+Trace.beginSection("retrofit-warm-loop")
+Trace.endSection()
+这不需要改 Retrofit 源码，只是在你调用 API 方法前后打点。
+
+2) 录制 Perfetto trace
+Android Studio Profiler 也能录 Perfetto（System Trace）
+或用命令行 perfetto / atrace（看你环境）
+然后在 Perfetto UI 里：
+
+找到你的 section（名字就是你 beginSection 的字符串）
+直接看 duration：cold 应明显更长（包含解析），warm 每次/平均更短
+关键注意事项（不然容易测不准）
+别发网络：网络会把 Retrofit 解析成本完全淹没。
+复用同一个 Retrofit 实例：缓存挂在 Retrofit 上；换 Retrofit 就等于清缓存。
+循环次数要足够大：warm 需要重复很多次（几万级）让采样稳定。
+避免被优化掉：循环里拿到的 Call 最好做点“不可消除”的动作，比如读一下 call.request()（但仍不执行网络），确保 JIT 不把整个循环当无用功优化（虽然一般不会完全消掉，但做一下更稳）。
+debug 可读性优先：先在 debug + 无混淆下完成验证。
+我建议你用的最稳方案
+CPU Profiler（Callstack Sample） + 两次单独录制（cold 一次、warm 循环）
+同时在 cold/warm 段外层加 Trace.beginSection/endSection，这样你在 trace 里能快速定位那一段。
+如果你把你的接口方法形态（Call<T> 还是 suspend）以及你希望放在哪个线程跑（主线程/后台线程）告诉我，我可以给你一份更具体的“测试函数结构”（包含 warm-up、循环次数建议、如何避免 UI 卡顿）。
+
+
+A 如何做到不发送网络请求
+Copilot said: 在 Android 上用 **A（Android Studio CPU Profiler）**做
+在 Android 上用 A（Android Studio CPU Profiler）做 Retrofit“方法解析/缓存”测试时，完全不发网络请求的关键是：只调用接口方法让 Retrofit 创建并返回 Call（或触发 suspend 的适配逻辑），但不要触发 execute() / enqueue() / 以及不要对 suspend 方法真正 await 执行。
+
+下面给出可操作做法（按你可能的返回类型分情况）。
+
+1) 如果你的接口方法返回 Call<T>：最简单
+只要你不调用 execute() 或 enqueue()，OkHttp 不会发请求。
+
+RetrofitNoNetworkCallTest.kt
+interface Api {
+  @GET("users/{id}")
+  fun user(@Path("id") id: String): retrofit2.Call<okhttp3.ResponseBody>
+}
+
+fun testNoNetwork(api: Api) {
+为了让 Profiler 更容易采到栈，你可以循环调用多次，但仍不执行：
+
+RetrofitWarmLoopNoNetwork.kt
+fun warmLoopNoNetwork(api: Api) {
+  repeat(100_000) {
+    val call = api.user("1")
+    // 可选：访问 request() 也不会发网络，只是把 Request 构建出来（通常已构建）
+    call.request()
+  }
+结论：对 Call<T>，只要不 execute/enqueue，就不会发送网络。
+
+2) 如果你的接口方法是 suspend fun ...: T：要避免“await/执行”
+suspend 方法一旦真正调用并挂起执行，Retrofit 会去执行网络（内部还是基于 OkHttp Call）。
+
+因此要做到“不发网络”，你有三种选择：
+
+方案 2.1 改成返回 Call<T> 的专用测试方法（推荐）
+在同一个接口里额外加一个只用于 profiling 的方法：
+
+ApiForProfiling.kt
+interface Api {
+  @GET("users/{id}")
+  suspend fun userSuspend(@Path("id") id: String): User
+
+  // 仅用于测试解析/缓存，不执行网络
+  @GET("users/{id}")
+然后 profiling 只调用 userCall(...)，不调用 enqueue/execute。
+
+这是最干净、最可控的办法。
+
+方案 2.2 只触发“方法解析”，不真正调用 suspend（不推荐/不直观）
+suspend 的网络执行发生在你调用该函数时，所以你无法“调用它但不执行”。除非你只做反射拿 Method 并走 Retrofit 内部解析（但那需要访问内部 API，不适合普通 app 验证）。
+
+方案 2.3 用假的 Call.Factory/OkHttpClient 拦截并阻止真正 I/O（可行但复杂）
+可以提供一个自定义 okhttp3.Call.Factory，让它创建的 Call 在执行时直接抛异常或返回本地响应，从而“不会发到网络上”。但注意：如果你连 execute/enqueue 都不调用，这也没必要。它主要用于你必须走到执行阶段但又不想真的联网的场景。
+
+3) 你可能担心的点：创建 Call 会不会“偷偷发请求”？
+不会。Retrofit/OkHttp 的设计是：
+
+创建 Call、构建 Request：不联网
+只有在：
+call.execute()（同步）
+call.enqueue(callback)（异步）
+或 suspend 实际挂起等待结果（内部会触发 enqueue/execute 的某种路径）
+才会真正开始网络 I/O。
+
+4) 用于 profiling 的“冷启动 vs 热循环”结构（不联网版）
+Cold：保证会走解析
+
+新建 Retrofit
+create(Api::class.java)
+调用一次 api.userCall("1")
+Warm：复用同一 Retrofit / 同一 Api
+
+repeat(100_000) { api.userCall("1").request() }
+注意：Warm 不能 new Retrofit，否则等于每次清空缓存。
+
+如果你把你当前接口返回类型贴一下（Call<T> 还是 suspend），我可以按你的现状给你一段“可直接复制到 Activity/Instrumentation test 里跑”的 profiling 代码骨架（包含循环次数、线程安排，避免 UI 卡顿）。
+
+You said: 直接给我一个Instrumentation test，Call<T> 示例代码
+直接给我一个Instrumentation test，Call<T> 示例代码
+Copilot said: ```kotlin name=app/src/androidTest/java/com/example/retrofit/RetrofitMethodCacheInstrumentationTest.kt package com.example.retrofit import androidx.test.ext.junit.runners.AndroidJUnit4 import okhttp3.Call import okhttp3.OkHttpClient import okhttp3.ResponseBody import
+app/src/androidTest/java/com/example/retrofit/RetrofitMethodCacheInstrumentationTest.kt
+package com.example.retrofit
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import okhttp3.Call
+import okhttp3.OkHttpClient
+import okhttp3.ResponseBody
+运行方式与“不发网络”的保证：
+
+这是 androidTest（Instrumentation test），放到你 app module 对应路径下即可运行。
+测试里 从未调用 call.execute() 或 call.enqueue()，因此 OkHttp 不会发起网络请求；call.request() 也不会联网，只是返回/构建 Request。
+用 Android Studio CPU Profiler 录制该测试时，在 Flame/Call Chart 搜索 retrofit2.ServiceMethod、parseAnnotations、retrofit2.RequestFactory：首次（cold）会出现解析栈，warm 循环基本只剩下构建/请求相关轻量路径（解析栈应显著减少）。
+
+
+
+
+
+loadServiceMethod 和 parseAnnotations ，只有cold才调用吗
+Copilot said: 不是。 - **`loadServiceMethod(method)`：cold 和 warm 都会调用**
+不是。
+
+loadServiceMethod(method)：cold 和 warm 都会调用
+因为每次你调用接口方法（代理对象的方法）时，InvocationHandler 都需要先拿到该 Method 对应的 ServiceMethod 执行模型。获取模型这一步就是 loadServiceMethod：
+
+cold：cache miss → 进去解析并 put cache
+warm：cache hit → 直接返回缓存对象
+parseAnnotations(...)：同一个 Retrofit 实例 + 同一个 Method 下，通常只有 cold 才会调用
+因为它只在 loadServiceMethod 发现缓存没有该 Method 时才会触发，用来构建 ServiceMethod（其中包含 RequestFactory、ParameterHandler、CallAdapter、Converter 等）。
+
+更精确地说：
+
+同一个 Retrofit 实例
+缓存挂在 Retrofit 上；只要你不重新 new 一个 Retrofit，warm 就会命中缓存。
+
+同一个 java.lang.reflect.Method（同一个接口方法签名）
+换一个接口方法（哪怕同一个接口里另一个 endpoint），第一次调用它也会触发一次 parseAnnotations。
+
+并发/竞态情况下
+Retrofit 的实现会尽量保证只解析一次，但在极端并发下你可能在 profiler 里看到非常短暂的重复解析（取决于实现的锁/双检细节）。一般情况下（单线程或常规用法）可以认为：一个 method 解析一次。
+
+如果你想“验证确实只解析一次”，最直接的是在 ServiceMethod.parseAnnotations 或 RequestFactory.parseAnnotations 下断点，然后：
+
+连续调用同一接口方法两次：断点只会中一次
+换另一个接口方法：会再中一次
+重新创建 Retrofit：会再次中（因为缓存清空了）
