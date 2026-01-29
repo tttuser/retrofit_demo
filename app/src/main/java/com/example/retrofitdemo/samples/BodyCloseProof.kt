@@ -196,9 +196,7 @@ object BodyCloseProof {
         ),
         USE_BLOCK_PATTERN(
             "Use responseBody.use { } block to ensure proper closing"
-        );
-        
-        fun getDescription(): String = description
+        )
     }
     
     /**
@@ -207,6 +205,6 @@ object BodyCloseProof {
      * @return Map of behavior name to description
      */
     fun getAllClosingBehaviors(): Map<String, String> {
-        return ClosingBehavior.values().associate { it.name to it.getDescription() }
+        return ClosingBehavior.values().associate { it.name to it.description }
     }
 }
