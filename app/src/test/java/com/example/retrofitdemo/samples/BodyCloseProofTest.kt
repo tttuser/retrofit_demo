@@ -258,7 +258,7 @@ class BodyCloseProofTest {
     @Test
     fun `AUTO_CLOSED_TYPE behavior has correct description`() {
         // Act
-        val description = BodyCloseProof.ClosingBehavior.AUTO_CLOSED_TYPE.getDescription()
+        val description = BodyCloseProof.ClosingBehavior.AUTO_CLOSED_TYPE.description
         
         // Assert
         assertTrue("Should mention automatic closing", description.contains("automatically"))
@@ -271,7 +271,7 @@ class BodyCloseProofTest {
     @Test
     fun `MANUAL_CLOSE_REQUIRED behavior has correct description`() {
         // Act
-        val description = BodyCloseProof.ClosingBehavior.MANUAL_CLOSE_REQUIRED.getDescription()
+        val description = BodyCloseProof.ClosingBehavior.MANUAL_CLOSE_REQUIRED.description
         
         // Assert
         assertTrue("Should mention manual closing", description.contains("manual"))
@@ -284,7 +284,7 @@ class BodyCloseProofTest {
     @Test
     fun `STRING_AUTO_CLOSES behavior has correct description`() {
         // Act
-        val description = BodyCloseProof.ClosingBehavior.STRING_AUTO_CLOSES.getDescription()
+        val description = BodyCloseProof.ClosingBehavior.STRING_AUTO_CLOSES.description
         
         // Assert
         assertTrue("Should mention string()", description.contains("string()"))
