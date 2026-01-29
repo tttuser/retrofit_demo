@@ -278,7 +278,7 @@ class ContractTestsTest {
      */
     @Test
     fun `user list validation catches individual user errors`() {
-        // Arrange: One invalid user
+        // Arrange: One invalid user with multiple issues
         val users = listOf(
             ContractTests.ApiUser(1, "alice", "alice@example.com", "2024-01-01"),
             ContractTests.ApiUser(0, "invalid", "bad-email", "")
@@ -291,6 +291,9 @@ class ContractTestsTest {
         assertTrue("Invalid user should fail list validation", result is ContractTests.ValidationResult.Invalid)
         val errors = (result as ContractTests.ValidationResult.Invalid).errors
         assertTrue("Should have multiple errors", errors.size > 1)
+        // Verify specific errors are caught
+        assertTrue("Should mention ID issue", errors.any { it.contains("ID") })
+        assertTrue("Should mention email issue", errors.any { it.contains("Email") || it.contains("email") })
     }
     
     /**

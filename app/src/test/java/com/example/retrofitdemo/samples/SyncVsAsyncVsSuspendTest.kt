@@ -201,7 +201,7 @@ class SyncVsAsyncVsSuspendTest {
             fail("Should have thrown exception")
         } catch (e: Exception) {
             // Expected - suspend functions throw on HTTP errors
-            assertTrue("Exception message should mention HTTP error", true)
+            assertNotNull("Exception should not be null", e.message)
         }
     }
     

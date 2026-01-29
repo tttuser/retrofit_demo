@@ -82,6 +82,7 @@ object CustomHostAndNoAuth {
      * Interceptor that supports dynamic host switching.
      * 
      * Reads X-Use-Custom-Host header and rewrites the URL.
+     * Supports both "hostname" and "hostname:port" formats.
      */
     class DynamicHostInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
@@ -89,13 +90,24 @@ object CustomHostAndNoAuth {
             val customHost = originalRequest.header("X-Use-Custom-Host")
             
             return if (customHost != null) {
+                // Parse host and port from customHost (format: "hostname" or "hostname:port")
+                val hostAndPort = customHost.split(":", limit = 2)
+                val host = hostAndPort[0]
+                val port = hostAndPort.getOrNull(1)?.toIntOrNull()
+                
                 // Rewrite URL to use custom host
-                val newUrl = HttpUrl.Builder()
+                val newUrlBuilder = HttpUrl.Builder()
                     .scheme(originalRequest.url.scheme)
-                    .host(customHost)
+                    .host(host)
                     .encodedPath(originalRequest.url.encodedPath)
                     .query(originalRequest.url.query)
-                    .build()
+                
+                // Set port if specified, otherwise use default for scheme
+                if (port != null) {
+                    newUrlBuilder.port(port)
+                }
+                
+                val newUrl = newUrlBuilder.build()
                 
                 val newRequest = originalRequest.newBuilder()
                     .url(newUrl)
@@ -187,7 +199,5 @@ object CustomHostAndNoAuth {
     /**
      * Gets all use cases for dynamic host configuration.
      */
-    fun getUseCases(): List<UseCase> {
-        return UseCase.values().toList()
-    }
+    fun getUseCases(): List<UseCase> = UseCase.entries
 }

@@ -31,7 +31,9 @@ import java.util.Base64
  * - Multiple converters can be chained (executed in order)
  * - DecryptingConverterFactory decrypts, then delegates to MoshiConverterFactory
  * - Useful for APIs that encrypt sensitive data in transit
- * - This example uses simple Base64 encoding (not real encryption!)
+ * - This example uses simple Base64 encoding for demonstration
+ * - NOTE: Base64 provides NO encryption or security - data is easily decoded!
+ * - Real implementations should use actual encryption (AES, RSA, etc.)
  */
 object DecryptThenParse {
     
@@ -192,7 +194,5 @@ object DecryptThenParse {
     /**
      * Gets all use cases for encrypted responses.
      */
-    fun getUseCases(): List<UseCase> {
-        return UseCase.values().toList()
-    }
+    fun getUseCases(): List<UseCase> = UseCase.entries
 }

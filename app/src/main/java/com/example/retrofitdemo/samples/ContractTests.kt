@@ -139,6 +139,9 @@ object ContractTests {
      * - Status code is 4xx or 5xx
      * - Error body is present
      * - Error body can be parsed
+     * 
+     * Note: This method consumes the error body by calling .string().
+     * The error body cannot be read again after calling this method.
      */
     fun validateErrorContract(response: Response<*>): ValidationResult {
         val errors = mutableListOf<String>()
@@ -196,11 +199,14 @@ object ContractTests {
     
     /**
      * Validates that a list of users is valid.
+     * Note: Empty lists are considered invalid in this example.
+     * Modify this logic based on your API contract requirements.
      */
     fun validateUserList(users: List<ApiUser>): ValidationResult {
         val errors = mutableListOf<String>()
         
-        // Check list is not empty (if expecting data)
+        // Check list is not empty
+        // Note: Remove this check if your API can return empty lists validly
         if (users.isEmpty()) {
             errors.add("User list is empty")
         }
@@ -248,7 +254,5 @@ object ContractTests {
     /**
      * Gets all contract test types.
      */
-    fun getContractTestTypes(): List<ContractTestType> {
-        return ContractTestType.values().toList()
-    }
+    fun getContractTestTypes(): List<ContractTestType> = ContractTestType.entries
 }
